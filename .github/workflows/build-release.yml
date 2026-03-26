@@ -22,14 +22,6 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Set JAVA_HOME and PATH
-        run: |
-          # Find Java installation dynamically
-          JAVA_LOCATION=$(dirname $(dirname $(readlink -f $(which java))))
-          echo "JAVA_HOME=$JAVA_LOCATION" >> $GITHUB_ENV
-          echo "PATH=$JAVA_LOCATION/bin:$PATH" >> $GITHUB_ENV
-          echo "Java location: $JAVA_LOCATION"
-          java -version
 
       - name: Build with Maven
         run: mvn clean package -DskipTests -q
