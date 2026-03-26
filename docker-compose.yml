@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Allure Report Server (optional - for centralized reporting)
+  allure:
+    image: frankescobar/allure-docker-service:2.24.0
+    ports:
+      - "4040:4040"
+      - "4041:4041"
+    volumes:
+      - ./allure-results:/app/allure-results
+      - ./allure-reports:/app/default-reports-dir
+    environment:
+      CHECK_RESULTS_EVERY_SECONDS: 5
+      KEEP_HISTORY: 1
+
+  # SonarQube (optional - for code quality)
+  sonarqube:
+    image: sonarqube:lts
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://db:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    depends_on:
+      - db
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+
+  # PostgreSQL database (for SonarQube)
+  db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+      - POSTGRES_DB=sonar
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Jenkins (optional - for CI/CD orchestration)
+  jenkins:
+    image: jenkins/jenkins:lts
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
+  postgres_data:
+  jenkins_home:
+
+# To run:
+# docker-compose up -d
+#
+# To stop:
+# docker-compose down
+#
+# Allure Report: http://localhost:4040
+# SonarQube: http://localhost:9000 (default: admin/admin)
+# Jenkins: http://localhost:8080
