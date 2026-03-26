@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite name="Banking Automation Framework Test Suite" parallel="false">
+
+    <test name="Banking Framework Verification Tests - PASSING">
+        <classes>
+            <class name="tests.BankingFrameworkVerificationTest"/>
+        </classes>
+    </test>
+
+    <test name="Banking Login Configuration Tests">
+        <classes>
+            <class name="tests.BankingLoginTest"/>
+        </classes>
+    </test>
+
+    <test name="ParaBank UI Tests - Real Application Testing">
+        <classes>
+            <class name="tests.ParaBankUITest"/>
+        </classes>
+    </test>
+
+</suite>
