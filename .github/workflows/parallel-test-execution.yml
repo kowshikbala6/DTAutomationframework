@@ -37,6 +37,14 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Verify Java Installation
+        run: |
+          echo "Java version:"
+          java -version
+          echo "JAVA_HOME: $JAVA_HOME"
+          echo "Maven version:"
+          mvn -version
+
       - name: Run ${{ matrix.test-suite }}
         run: mvn test -Dtest=${{ matrix.test-suite }} -Dmaven.test.failure.ignore=true
         continue-on-error: true

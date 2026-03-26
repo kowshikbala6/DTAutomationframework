@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Code Quality & Security Checks
 
+    env:
+      JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/11.0.30-7/x64
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,6 +27,14 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Verify Java Setup
+        run: |
+          echo "Java version:"
+          java -version
+          echo "JAVA_HOME: $JAVA_HOME"
+          echo "Path to java:"
+          which java
+
       - name: Run Maven Build
         run: mvn clean verify -DskipTests -q
 
@@ -34,6 +45,8 @@ jobs:
 
       - name: Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
+        env:
+          JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/11.0.30-7/x64
         with:
           project: 'Banking-Automation-Framework'
           path: '.'
