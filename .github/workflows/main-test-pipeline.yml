@@ -30,6 +30,12 @@ jobs:
       - name: Install dependencies
         run: mvn clean install -DskipTests -q
 
+      - name: Build project
+        run: |
+          echo "🏗️ Building project..."
+          mvn clean compile -q
+          echo "✅ Build completed successfully"
+
       - name: Run all tests
         run: mvn test -Dmaven.test.failure.ignore=true
         continue-on-error: true
@@ -67,19 +73,134 @@ jobs:
           comment_mode: always
         continue-on-error: true
 
+      - name: Validate Test Reports
+        if: always()
+        run: |
+          set -e
+          echo "🔍 Validating test reports..."
+          
+          REPORTS_DIR="target/surefire-reports"
+          
+          # Check if reports directory exists
+          if [ ! -d "$REPORTS_DIR" ]; then
+            echo "❌ ERROR: No test reports found in $REPORTS_DIR"
+            exit 1
+          fi
+          
+          # Find all XML test result files
+          XML_FILES=$(find "$REPORTS_DIR" -name "TEST-*.xml" -type f)
+          TOTAL_FILES=$(echo "$XML_FILES" | grep -c . || echo 0)
+          
+          if [ "$TOTAL_FILES" -eq 0 ]; then
+            echo "❌ ERROR: No TEST-*.xml files found"
+            exit 1
+          fi
+          
+          echo "✅ Found $TOTAL_FILES test result files"
+          
+          # Parse test metrics from XML files
+          TOTAL_TESTS=0
+          TOTAL_FAILURES=0
+          TOTAL_SKIPPED=0
+          TOTAL_ERRORS=0
+          
+          for xml_file in $XML_FILES; do
+            TESTS=$(grep -oP 'tests="\K[^"]+' "$xml_file" || echo 0)
+            FAILURES=$(grep -oP 'failures="\K[^"]+' "$xml_file" || echo 0)
+            SKIPPED=$(grep -oP 'skipped="\K[^"]+' "$xml_file" || echo 0)
+            ERRORS=$(grep -oP 'errors="\K[^"]+' "$xml_file" || echo 0)
+            
+            TOTAL_TESTS=$((TOTAL_TESTS + ${TESTS:-0}))
+            TOTAL_FAILURES=$((TOTAL_FAILURES + ${FAILURES:-0}))
+            TOTAL_SKIPPED=$((TOTAL_SKIPPED + ${SKIPPED:-0}))
+            TOTAL_ERRORS=$((TOTAL_ERRORS + ${ERRORS:-0}))
+          done
+          
+          # Calculate metrics
+          PASSED=$((TOTAL_TESTS - TOTAL_FAILURES - TOTAL_SKIPPED - TOTAL_ERRORS))
+          
+          if [ "$TOTAL_TESTS" -eq 0 ]; then
+            echo "❌ ERROR: No tests found in reports"
+            exit 1
+          fi
+          
+          FAILURE_RATE=$(echo "scale=2; ($TOTAL_FAILURES * 100) / $TOTAL_TESTS" | bc)
+          PASS_RATE=$(echo "scale=2; ($PASSED * 100) / $TOTAL_TESTS" | bc)
+          
+          # Store metrics in environment for next step
+          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "PASSED=$PASSED" >> $GITHUB_ENV
+          echo "FAILURES=$TOTAL_FAILURES" >> $GITHUB_ENV
+          echo "SKIPPED=$TOTAL_SKIPPED" >> $GITHUB_ENV
+          echo "ERRORS=$TOTAL_ERRORS" >> $GITHUB_ENV
+          echo "PASS_RATE=$PASS_RATE" >> $GITHUB_ENV
+          echo "FAILURE_RATE=$FAILURE_RATE" >> $GITHUB_ENV
+          
+          echo "📊 Test Metrics:"
+          echo "  • Total Tests: $TOTAL_TESTS"
+          echo "  • Passed: $PASSED ✅"
+          echo "  • Failed: $TOTAL_FAILURES ❌"
+          echo "  • Skipped: $TOTAL_SKIPPED ⏭️"
+          echo "  • Errors: $TOTAL_ERRORS ⚠️"
+          echo "  • Pass Rate: $PASS_RATE%"
+          echo "  • Failure Rate: $FAILURE_RATE%"
+          
+          # Quality Gates
+          echo ""
+          echo "🚪 Applying Quality Gates..."
+          QUALITY_GATE_PASSED=true
+          
+          # Gate 1: Minimum 1 test must run
+          if [ "$TOTAL_TESTS" -lt 1 ]; then
+            echo "  ❌ GATE FAILED: Minimum 1 test required (found: $TOTAL_TESTS)"
+            QUALITY_GATE_PASSED=false
+          else
+            echo "  ✅ GATE PASSED: Test count requirement"
+          fi
+          
+          # Gate 2: Pass rate must be >= 80%
+          PASS_RATE_INT=$(echo "$PASS_RATE" | cut -d. -f1)
+          if [ "$PASS_RATE_INT" -lt 80 ]; then
+            echo "  ❌ GATE FAILED: Pass rate must be >= 80% (found: $PASS_RATE%)"
+            QUALITY_GATE_PASSED=false
+          else
+            echo "  ✅ GATE PASSED: Pass rate requirement ($PASS_RATE%)"
+          fi
+          
+          # Gate 3: No critical errors allowed
+          if [ "$TOTAL_ERRORS" -gt 0 ]; then
+            echo "  ⚠️  WARNING: Test errors detected ($TOTAL_ERRORS)"
+          else
+            echo "  ✅ GATE PASSED: No test errors"
+          fi
+          
+          echo ""
+          if [ "$QUALITY_GATE_PASSED" = true ]; then
+            echo "✅ ALL QUALITY GATES PASSED!"
+            exit 0
+          else
+            echo "❌ QUALITY GATES FAILED!"
+            exit 1
+          fi
+
       - name: Generate Test Summary Report
         if: always()
         run: |
           echo "## Test Execution Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -d "target/surefire-reports" ]; then
-            TEST_COUNT=$(find target/surefire-reports -name "TEST-*.xml" | wc -l)
-            echo "✅ Test Results Files: $TEST_COUNT" >> $GITHUB_STEP_SUMMARY
-            echo "📊 Reports Location: target/surefire-reports/" >> $GITHUB_STEP_SUMMARY
-            echo "📈 Allure Report: Check Artifacts" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ No test reports found" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Tests | ${{ env.TOTAL_TESTS }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Passed | ${{ env.PASSED }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Failed | ${{ env.FAILURES }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏭️ Skipped | ${{ env.SKIPPED }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⚠️ Errors | ${{ env.ERRORS }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pass Rate | ${{ env.PASS_RATE }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Report Locations" >> $GITHUB_STEP_SUMMARY
+          echo "- **Allure Report**: Check Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Results**: `target/surefire-reports/`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Allure Results**: `allure-results/`" >> $GITHUB_STEP_SUMMARY
 
       - name: Comment PR with Test Summary
         if: always() && github.event_name == 'pull_request'

@@ -1,0 +1,245 @@
+name: Test Report Validation
+
+on:
+  workflow_run:
+    workflows: ["Main Test Pipeline"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      min_pass_rate:
+        description: 'Minimum pass rate required (%)'
+        required: false
+        default: '80'
+      min_tests:
+        description: 'Minimum number of tests required'
+        required: false
+        default: '1'
+
+jobs:
+  validate-reports:
+    runs-on: ubuntu-latest
+    name: Validate Test Reports
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: test-results
+
+      - name: Parse and Validate Test Reports
+        id: validate
+        run: |
+          set -e
+          
+          REPORTS_DIR="test-results"
+          MIN_PASS_RATE="${{ inputs.min_pass_rate || '80' }}"
+          MIN_TESTS="${{ inputs.min_tests || '1' }}"
+          
+          echo "🔍 Validating test reports from workflow_run..."
+          echo "📋 Configuration:"
+          echo "   - Minimum Pass Rate: ${MIN_PASS_RATE}%"
+          echo "   - Minimum Tests Required: ${MIN_TESTS}"
+          echo ""
+          
+          # Check if reports directory exists
+          if [ ! -d "$REPORTS_DIR" ]; then
+            echo "❌ ERROR: No test results found"
+            echo "validation_status=FAILED" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Find all XML test result files
+          XML_FILES=$(find "$REPORTS_DIR" -name "*.xml" -type f)
+          TOTAL_FILES=$(echo "$XML_FILES" | grep -c . || echo 0)
+          
+          if [ "$TOTAL_FILES" -eq 0 ]; then
+            echo "❌ ERROR: No XML test files found"
+            echo "validation_status=FAILED" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "✅ Found $TOTAL_FILES XML test files"
+          echo ""
+          
+          # Parse and aggregate metrics
+          TOTAL_TESTS=0
+          TOTAL_FAILURES=0
+          TOTAL_SKIPPED=0
+          TOTAL_ERRORS=0
+          FAILED_TESTS=""
+          
+          for xml_file in $XML_FILES; do
+            # Extract test class name
+            TEST_CLASS=$(basename "$xml_file" .xml)
+            
+            # Parse XML metrics
+            TESTS=$(grep -oP 'tests="\K[^"]+' "$xml_file" 2>/dev/null || echo 0)
+            FAILURES=$(grep -oP 'failures="\K[^"]+' "$xml_file" 2>/dev/null || echo 0)
+            SKIPPED=$(grep -oP 'skipped="\K[^"]+' "$xml_file" 2>/dev/null || echo 0)
+            ERRORS=$(grep -oP 'errors="\K[^"]+' "$xml_file" 2>/dev/null || echo 0)
+            
+            TESTS=${TESTS:-0}
+            FAILURES=${FAILURES:-0}
+            SKIPPED=${SKIPPED:-0}
+            ERRORS=${ERRORS:-0}
+            
+            TOTAL_TESTS=$((TOTAL_TESTS + TESTS))
+            TOTAL_FAILURES=$((TOTAL_FAILURES + FAILURES))
+            TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKIPPED))
+            TOTAL_ERRORS=$((TOTAL_ERRORS + ERRORS))
+            
+            # Extract failed test names
+            if [ "$FAILURES" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+              FAILED_IN_CLASS=$(grep -oP '<testcase[^>]*name="\K[^"]+' "$xml_file" | head -3)
+              if [ -n "$FAILED_IN_CLASS" ]; then
+                FAILED_TESTS="$FAILED_TESTS
+  - $TEST_CLASS:
+    - $FAILED_IN_CLASS"
+              fi
+            fi
+          done
+          
+          # Calculate derived metrics
+          PASSED=$((TOTAL_TESTS - TOTAL_FAILURES - TOTAL_SKIPPED - TOTAL_ERRORS))
+          
+          if [ "$TOTAL_TESTS" -eq 0 ]; then
+            echo "❌ ERROR: No tests found in any report"
+            echo "validation_status=FAILED" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          PASS_RATE=$(echo "scale=2; ($PASSED * 100) / $TOTAL_TESTS" | bc)
+          FAILURE_RATE=$(echo "scale=2; ($TOTAL_FAILURES * 100) / $TOTAL_TESTS" | bc)
+          
+          # Store outputs
+          echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failures=$TOTAL_FAILURES" >> $GITHUB_OUTPUT
+          echo "skipped=$TOTAL_SKIPPED" >> $GITHUB_OUTPUT
+          echo "errors=$TOTAL_ERRORS" >> $GITHUB_OUTPUT
+          echo "pass_rate=$PASS_RATE" >> $GITHUB_OUTPUT
+          echo "failure_rate=$FAILURE_RATE" >> $GITHUB_OUTPUT
+          echo "test_files=$TOTAL_FILES" >> $GITHUB_OUTPUT
+          
+          # Store in environment for later steps
+          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "PASSED=$PASSED" >> $GITHUB_ENV
+          echo "FAILURES=$TOTAL_FAILURES" >> $GITHUB_ENV
+          echo "SKIPPED=$TOTAL_SKIPPED" >> $GITHUB_ENV
+          echo "ERRORS=$TOTAL_ERRORS" >> $GITHUB_ENV
+          echo "PASS_RATE=$PASS_RATE" >> $GITHUB_ENV
+          
+          echo "📊 Test Metrics:"
+          echo "   • Total Tests: $TOTAL_TESTS"
+          echo "   • Passed: $PASSED ✅"
+          echo "   • Failed: $TOTAL_FAILURES ❌"
+          echo "   • Skipped: $TOTAL_SKIPPED ⏭️"
+          echo "   • Errors: $TOTAL_ERRORS ⚠️"
+          echo "   • Pass Rate: $PASS_RATE%"
+          echo "   • Failure Rate: $FAILURE_RATE%"
+          echo ""
+          
+          # Apply quality gates
+          echo "🚪 Applying Quality Gates:"
+          VALIDATION_PASSED=true
+          
+          # Gate 1: Minimum test count
+          if [ "$TOTAL_TESTS" -lt "$MIN_TESTS" ]; then
+            echo "   ❌ GATE FAILED: Minimum $MIN_TESTS tests required (found: $TOTAL_TESTS)"
+            VALIDATION_PASSED=false
+          else
+            echo "   ✅ GATE PASSED: Test count requirement ($TOTAL_TESTS >= $MIN_TESTS)"
+          fi
+          
+          # Gate 2: Pass rate threshold
+          PASS_RATE_INT=$(echo "$PASS_RATE" | cut -d. -f1)
+          if [ "$PASS_RATE_INT" -lt "$MIN_PASS_RATE" ]; then
+            echo "   ❌ GATE FAILED: Pass rate must be >= ${MIN_PASS_RATE}% (found: $PASS_RATE%)"
+            VALIDATION_PASSED=false
+          else
+            echo "   ✅ GATE PASSED: Pass rate requirement ($PASS_RATE% >= ${MIN_PASS_RATE}%)"
+          fi
+          
+          # Gate 3: No test errors
+          if [ "$TOTAL_ERRORS" -gt 0 ]; then
+            echo "   ⚠️  WARNING: Test execution errors detected ($TOTAL_ERRORS)"
+          else
+            echo "   ✅ GATE PASSED: No test execution errors"
+          fi
+          
+          echo ""
+          if [ "$VALIDATION_PASSED" = true ]; then
+            echo "✅ All quality gates PASSED!"
+            echo "validation_status=PASSED" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "❌ Quality gates FAILED!"
+            echo "validation_status=FAILED" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Create Validation Report
+        if: always()
+        run: |
+          cat > test-validation-report.md << 'EOF'
+          # 📋 Test Report Validation Summary
+          
+          ## 📊 Test Metrics
+          | Metric | Value |
+          |--------|-------|
+          | Total Tests | ${{ steps.validate.outputs.total_tests }} |
+          | ✅ Passed | ${{ steps.validate.outputs.passed }} |
+          | ❌ Failed | ${{ steps.validate.outputs.failures }} |
+          | ⏭️ Skipped | ${{ steps.validate.outputs.skipped }} |
+          | ⚠️ Errors | ${{ steps.validate.outputs.errors }} |
+          | Pass Rate | ${{ steps.validate.outputs.pass_rate }}% |
+          | Failure Rate | ${{ steps.validate.outputs.failure_rate }}% |
+          | Report Files | ${{ steps.validate.outputs.test_files }} |
+          
+          ## 🚪 Quality Gate Status
+          - **Overall Status**: ${{ steps.validate.outputs.validation_status }}
+          - **Pass Rate Threshold**: ${{ inputs.min_pass_rate || '80' }}%
+          - **Minimum Tests**: ${{ inputs.min_tests || '1' }}
+          
+          ## ✅ Next Steps
+          1. Review detailed test results in Artifacts
+          2. Check Allure Report for visual test metrics
+          3. Investigate failed tests if any
+          
+          **Generated**: $(date)
+          EOF
+          cat test-validation-report.md
+
+      - name: Upload Validation Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-validation-report
+          path: test-validation-report.md
+          retention-days: 30
+
+      - name: Add to Job Summary
+        if: always()
+        run: |
+          echo "## ✅ Test Report Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Tests | ${{ steps.validate.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Passed ✅ | ${{ steps.validate.outputs.passed }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Failed ❌ | ${{ steps.validate.outputs.failures }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Skipped ⏭️ | ${{ steps.validate.outputs.skipped }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Errors ⚠️ | ${{ steps.validate.outputs.errors }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pass Rate | ${{ steps.validate.outputs.pass_rate }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ steps.validate.outputs.validation_status }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if validation failed
+        if: failure() || steps.validate.outputs.validation_status == 'FAILED'
+        run: |
+          echo "❌ Test report validation FAILED!"
+          exit 1
