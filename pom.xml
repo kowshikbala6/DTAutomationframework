@@ -117,6 +117,39 @@
           <suiteXmlFiles>
             <suiteXmlFile>testng.xml</suiteXmlFile>
           </suiteXmlFiles>
+          <properties>
+            <property>
+              <name>useDefaultListeners</name>
+              <value>true</value>
+            </property>
+            <property>
+              <name>listener</name>
+              <value>io.qameta.allure.testng.AllureTestNg</value>
+            </property>
+          </properties>
+        </configuration>
+        <dependencies>
+          <dependency>
+            <groupId>io.qameta.allure</groupId>
+            <artifactId>allure-testng</artifactId>
+            <version>2.24.0</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+      <plugin>
+        <groupId>io.qameta.allure</groupId>
+        <artifactId>allure-maven</artifactId>
+        <version>2.11.2</version>
+      </plugin>
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <version>9.0.9</version>
+        <configuration>
+          <format>JSON</format>
+          <enableExperimental>true</enableExperimental>
+          <enableRetired>true</enableRetired>
+          <reportOutputDirectory>reports</reportOutputDirectory>
         </configuration>
       </plugin>
     </plugins>
