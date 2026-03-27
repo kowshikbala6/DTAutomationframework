@@ -117,6 +117,16 @@
           <suiteXmlFiles>
             <suiteXmlFile>testng.xml</suiteXmlFile>
           </suiteXmlFiles>
+          <properties>
+            <property>
+              <name>useDefaultListeners</name>
+              <value>true</value>
+            </property>
+            <property>
+              <name>listener</name>
+              <value>io.qameta.allure.testng.AllureTestNg</value>
+            </property>
+          </properties>
         </configuration>
         <dependencies>
           <dependency>

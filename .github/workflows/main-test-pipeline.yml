@@ -59,12 +59,27 @@ jobs:
           retention-days: 30
 
       - name: Publish Test Results
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          files: target/surefire-reports/**/*.xml
+          files: target/surefire-reports/junitreports/TEST-*.xml
           check_name: Test Results
           comment_mode: always
+        continue-on-error: true
+
+      - name: Generate Test Summary Report
+        if: always()
+        run: |
+          echo "## Test Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -d "target/surefire-reports" ]; then
+            TEST_COUNT=$(find target/surefire-reports -name "TEST-*.xml" | wc -l)
+            echo "✅ Test Results Files: $TEST_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "📊 Reports Location: target/surefire-reports/" >> $GITHUB_STEP_SUMMARY
+            echo "📈 Allure Report: Check Artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No test reports found" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Comment PR with Test Summary
         if: always() && github.event_name == 'pull_request'
