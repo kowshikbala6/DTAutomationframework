@@ -33,27 +33,23 @@ jobs:
           # mvn clean verify sonar:sonar -Dsonar.projectKey=banking-automation -Dsonar.host.url=http://localhost:9000 -Dsonar.login=${{ secrets.SONAR_TOKEN }}
           echo "SonarQube integration available - uncomment when configured"
 
-      - name: Dependency Check
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          project: 'Banking-Automation-Framework'
-          path: '.'
-          format: 'JSON'
-          args: >
-            --enableExperimental
-            --enableRetired
+      - name: Dependency Check via Maven
+        run: |
+          mvn org.owasp:dependency-check-maven:check \
+            -Dformat=JSON \
+            -DenableExperimental=true \
+            -DenableRetired=true \
+            -DreportOutputDirectory=reports \
+            -Dskip=false || true
 
       - name: Upload Dependency Check Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dependency-check-report
-          path: dependency-check-report.json
+          path: reports/
           retention-days: 30
 
-      - name: Check Maven Dependencies for vulnerabilities
-        run: |
-          mvn dependency-check:check || true
 
       - name: PMD Code Analysis (Optional)
         run: |

@@ -119,6 +119,17 @@
           </suiteXmlFiles>
         </configuration>
       </plugin>
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <version>9.0.9</version>
+        <configuration>
+          <format>JSON</format>
+          <enableExperimental>true</enableExperimental>
+          <enableRetired>true</enableRetired>
+          <reportOutputDirectory>reports</reportOutputDirectory>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 
