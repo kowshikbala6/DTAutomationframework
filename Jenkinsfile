@@ -75,18 +75,10 @@ pipeline {
 
         success {
             echo '✅ Pipeline succeeded!'
-            script {
-                // Slack notification
-                // slackSend(channel: '#test-automation', message: '✅ Tests passed', color: 'good')
-            }
         }
 
         failure {
             echo '❌ Pipeline failed!'
-            script {
-                // Slack notification
-                // slackSend(channel: '#test-automation', message: '❌ Tests failed', color: 'danger')
-            }
         }
     }
 }
